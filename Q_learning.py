@@ -24,8 +24,6 @@ class DQN(nn.Module):
         return self.layer3(x)
 
 
-dqn = DQN(n_observations, n_actions).to(device)
-
 Experience = namedtuple(
     'Experience',
     ('state', 'action', 'next_state', 'reward')
@@ -213,6 +211,8 @@ env = gym.make("CartPole-v1")
 action_space = env.action_space
 observation_space = env.observation_space.shape[0]
 
+
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
 agent = Agent(strategy, action_space, device)
@@ -221,7 +221,7 @@ memory = ReplayMemeory(memory_size)
 
 # 2. Initialize the policy network with random weights. 
 # policy_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
-policy_net = DQN(observation_space).to(device)
+policy_net = DQN(observation_space, action_space).to(device)
 
 # 3. Clone the policy network, and call it the target network. 
 # target_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
