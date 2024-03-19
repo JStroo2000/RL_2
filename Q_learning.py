@@ -170,6 +170,8 @@ for episode in range(num_episodes):
         env.render()
         action = agent.select_action(torch.from_numpy(state), policy_net)
         (next_state, reward, terminated, done,_) = env.step(action.item())
+        if terminated:
+            next_state,_ = env.reset()
         memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
         state = next_state
 
