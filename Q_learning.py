@@ -6,7 +6,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from collections import namedtuple
 from itertools import count
-
+import math
+import random
 
 class DQN(nn.Module):
 
@@ -28,6 +29,38 @@ Experience = namedtuple(
     'Experience',
     ('state', 'action', 'next_state', 'reward')
 )
+
+
+def get_moving_average(period, values):
+    values = torch.tensor(values, dtype=torch.float)
+
+    if len(values) >= period: # we can't calculate moving average of a dataset
+                            ## when the dataset is not at least as large as the
+                            ## the period we want to caculate the moving average for
+
+        moving_avg = values.unfold(dimension=0, # which returns a tensor that contains 
+                                   size=period, # with a size equal to the period 
+                                   step=1)\
+                                   .mean(dim=1).flatten(start_dim=0)
+                                   # containing all slices of 100 accross the original value tensor 
+                                   ## taking the average of each of these slices
+                                                        ## and flatten the tensor so that now
+                                                        ## a moving average is equal to tensor
+                                                        ## containing all 100 period moving average.
+
+        # We then concatenate this resulting tensor to a tensor of zeros with a size
+        ## equal to `period-1`. This is to show that the moving average for the first 
+        ## `period-1` values is zero given the explanation we just gave a moment ago.
+        ## So, if our period is `100`, then the first `99` values of the moving_avg
+        ## tensor will be `0`, and then each value afterwards will be the actual 
+        ## calculated `100-period` moving average. 
+        moving_avg = torch.cat((torch.zeros(period-1), moving_avg))
+        return moving_avg.numpy()
+    else:
+        # if the values is not bigger of equal to the period
+        moving_avg = torch.zeros(len(values))
+        return moving_avg.numpy()    
+
 
 class ReplayMemeory:
     def __init__(self, capacity):
@@ -119,14 +152,13 @@ class Agent:
                        to(device=self.device) # exploit
 
 
-def extract_tensors(experiences: NamedTuple) -> Tuple[torch.TensorType]:
+def extract_tensors(experiences: namedtuple):
     """
     accepts a batch of Experiences and first transposes
     it into an Experience of batches.
     """
     # Convert batch of Experiences to Experience of batches
     batch = Experience(*zip(*experiences))
-    # t_states = torch.cat(batch.state)
     t_states = torch.stack(batch.state)
     t_actions = torch.cat(batch.action)
     # t_next_state = torch.cat(batch.next_state)
@@ -208,7 +240,7 @@ lr = 0.001
 num_episodes = 1000
 
 env = gym.make("CartPole-v1")
-action_space = env.action_space
+action_space = env.action_space.n
 observation_space = env.observation_space.shape[0]
 
 
@@ -225,7 +257,7 @@ policy_net = DQN(observation_space, action_space).to(device)
 
 # 3. Clone the policy network, and call it the target network. 
 # target_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
-target_net = DQN(observation_space).to(device)
+target_net = DQN(observation_space, action_space).to(device)
 
 optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
 
@@ -235,7 +267,7 @@ episode_duration = []
 
 # 4. For each episode:
 for episode in range(num_episodes):
-    state = env.reset()
+    state,_ = env.reset()
 
     # (4.2) For each time step:
     for timestep in count():
@@ -248,12 +280,12 @@ for episode in range(num_episodes):
         """
         env.render()
         # (4.2.1) Select an action.
-        action = agent.select_action(state, policy_net)
+        action = agent.select_action(torch.from_numpy(state), policy_net)
         # (4.2.2) Execute selected action in an emulator.
         # (4.2.3) Observe reward and next state.
-        (next_state, reward, terminated, done,_) = env.step(action)
+        (next_state, reward, terminated, done,_) = env.step(action.item())
         # (4.2.4) Store experience in replay memory.
-        memory.push(Experience(state, action, next_state, reward))
+        memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
         state = next_state
 
         # (4.2.5) Sample random batch from replay memory.
@@ -282,7 +314,7 @@ for episode in range(num_episodes):
         # Check if the agent took the last action in the episode 
         if done:
             episode_duration.append(timestep)
-            plot(episode_duration, 100, env) # plot the duration by 100 moving average
+#            plot(episode_duration, 100, env) # plot the duration by 100 moving average
             break
 
     # (4.2.9.1) After *x* time steps,
