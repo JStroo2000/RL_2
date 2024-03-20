@@ -134,7 +134,8 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
-def main(env, memory_size):
+def main(env, memory_size): #-> add include_replay and include_Targetnetwork
+    
     batch_size = 256
     gamma = 0.999 # --> discounted rate
     eps_start = 1 # --> Epsilon start
@@ -146,12 +147,9 @@ def main(env, memory_size):
     num_episodes = 1000
 
     # env = gym.make("CartPole-v1", render_mode = 'human')
-    # env = gym.make("CartPole-v1")
     env = env
     action_space = env.action_space.n
     observation_space = env.observation_space.shape[0]
-
-
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
@@ -166,11 +164,7 @@ def main(env, memory_size):
     # store info 
     episode_rewards = []
     episode_durations = []
-    # exploration_rates = []
-    # episode_losses = []
-
     episode_duration_ma = []
-
 
     for episode in range(num_episodes):
         state,_ = env.reset()

@@ -1,6 +1,12 @@
 import argparse
 import Q_learning
 
+# – Compare DQN with DQN−ER
+# – Compare DQN with DQN−TN
+# – Compare DQN with DQN−EP−TN
+# -> option to run without replay buffer and/or Target Network
+#   Add command here, in Q_learning add variable for true/false to include in main
+
 def main():
     parser = argparse.ArgumentParser(description="run Q_learning")
     parser.add_argument("--human-render", action="store_true")
@@ -11,10 +17,7 @@ def main():
     print("--human-render: enable visualization")
     print("--experience replay: disable replay buffer")
 
-    # Wait for user input to continue
-    input("Press Enter to continue...")
-
-    # print("Model Specifics:") # maybe add summary of model
+    input("Press enter to continue...")
 
     if args.human_render:
         env = Q_learning.gym.make("CartPole-v1", render_mode='human')
