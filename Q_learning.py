@@ -8,6 +8,8 @@ from collections import namedtuple
 from itertools import count
 import math
 import random
+import matplotlib
+import matplotlib.pyplot as plt
 
 # Implementation inspired by: https://www.kaggle.com/code/dsxavier/dqn-openai-gym-cartpole-with-pytorch
 
@@ -132,64 +134,105 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
+def main(env, memory_size):
+    batch_size = 256
+    gamma = 0.999 # --> discounted rate
+    eps_start = 1 # --> Epsilon start
+    eps_end = 0.01 # --> Epsilon end
+    eps_decay = 0.001 # --> rate of Epsilon decay
+    target_update = 10 # --> For every 10 episode, we're going to update 
+    memory_size = memory_size
+    lr = 0.001
+    num_episodes = 1000
 
-batch_size = 256
-gamma = 0.999 # --> discounted rate
-eps_start = 1 # --> Epsilon start
-eps_end = 0.01 # --> Epsilon end
-eps_decay = 0.001 # --> rate of Epsilon decay
-target_update = 10 # --> For every 10 episode, we're going to update 
-memory_size = 100000
-lr = 0.001
-num_episodes = 1000
-
-env = gym.make("CartPole-v1", render_mode = 'human')
-action_space = env.action_space.n
-observation_space = env.observation_space.shape[0]
+    # env = gym.make("CartPole-v1", render_mode = 'human')
+    # env = gym.make("CartPole-v1")
+    env = env
+    action_space = env.action_space.n
+    observation_space = env.observation_space.shape[0]
 
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
-agent = Agent(strategy, action_space, device)
-memory = ReplayMemeory(memory_size)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
+    agent = Agent(strategy, action_space, device)
+    memory = ReplayMemeory(memory_size)
 
-policy_net = DQN(observation_space, action_space).to(device)
-target_net = DQN(observation_space, action_space).to(device)
+    policy_net = DQN(observation_space, action_space).to(device)
+    target_net = DQN(observation_space, action_space).to(device)
 
-optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
-episode_duration = []
+    optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
 
-for episode in range(num_episodes):
-    state,_ = env.reset()
-    for timestep in count():
-        env.render()
-        action = agent.select_action(torch.from_numpy(state), policy_net)
-        (next_state, reward, terminated, done,_) = env.step(action.item())
-        if terminated:
-            next_state,_ = env.reset()
-        memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
-        state = next_state
+    # store info 
+    episode_rewards = []
+    episode_durations = []
+    # exploration_rates = []
+    # episode_losses = []
 
-        if memory.can_provide_sample(batch_size):
-            experiences = memory.sample(batch_size)
-            states, actions, next_states, rewards = extract_tensors(experiences)
-            current_q_values = QValues.get_current(policy_net, states, actions)
-            next_q_values = QValues.get_next(target_net, next_states)
-            target_q_values = rewards + (gamma * next_q_values)
-            loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-        if done:
-            episode_duration.append(timestep)
-#            plot(episode_duration, 100, env) # plot the duration by 100 moving average
+    episode_duration_ma = []
+
+
+    for episode in range(num_episodes):
+        state,_ = env.reset()
+        episode_reward = 0
+        episode_loss = 0
+        for timestep in count():
+            env.render()
+            action = agent.select_action(torch.from_numpy(state), policy_net)
+            (next_state, reward, terminated, done,_) = env.step(action.item())
+            # print(next_state, reward, terminated, done)
+            episode_reward += reward # add up reward for the episode
+            if terminated:
+                next_state,_ = env.reset()
+            memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
+            state = next_state
+
+            if memory.can_provide_sample(batch_size):
+                experiences = memory.sample(batch_size)
+                states, actions, next_states, rewards = extract_tensors(experiences)
+                current_q_values = QValues.get_current(policy_net, states, actions)
+                next_q_values = QValues.get_next(target_net, next_states)
+                target_q_values = rewards + (gamma * next_q_values) # Bellman eq
+                loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
+                episode_loss += loss.item() # aad the loss for the episode
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+            if terminated: # was 'done', should be 'terminated'
+                episode_durations.append(timestep)
+                episode_rewards.append(episode_reward)
+                # episode_losses.append(episode_loss)
+                episode_duration_ma.append(timestep)
+                print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
+
+                #plot(episode_duration_ma, 100, env) # plot the duration by 100 moving average
+                break
+        print(f"episode {episode}: loss={episode_loss}")
+
+        if episode % target_update == 0:
+            target_net.load_state_dict(policy_net.state_dict())
+
+        if get_moving_average(100, episode_duration_ma)[-1] >= 195:
             break
+    env.close()
 
-    if episode % target_update == 0:
-        target_net.load_state_dict(policy_net.state_dict())
 
-    if get_moving_average(100, episode_duration)[-1] >= 195:
-        break
-env.close()
+    ## plot 
+    plt.figure(figsize=(10, 5))
 
+    # plot moving average
+    plt.subplot(1, 2, 1)
+    plt.plot(get_moving_average(100, episode_rewards))
+    plt.xlabel('episode')
+    plt.ylabel('moving avg of reward')
+    plt.title('moving avg of reward')
+
+    # plot duration
+    plt.subplot(1, 2, 2)
+    plt.plot(episode_durations)
+    plt.xlabel('episode')
+    plt.ylabel('timesteps')
+    plt.title('duration of episodes')
+
+    plt.tight_layout()
+    plt.show()
