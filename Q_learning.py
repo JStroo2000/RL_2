@@ -134,7 +134,7 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
-def main(env, memory_size): #-> add include_replay and include_Targetnetwork
+def main(env, include_replaybuffer, include_targetnetwork): #-> add include_replay and include_Targetnetwork
     
     batch_size = 256
     gamma = 0.999 # --> discounted rate
@@ -142,7 +142,7 @@ def main(env, memory_size): #-> add include_replay and include_Targetnetwork
     eps_end = 0.01 # --> Epsilon end
     eps_decay = 0.001 # --> rate of Epsilon decay
     target_update = 10 # --> For every 10 episode, we're going to update 
-    memory_size = memory_size
+    memory_size = 100000
     lr = 0.001
     num_episodes = 1000
 
@@ -154,11 +154,22 @@ def main(env, memory_size): #-> add include_replay and include_Targetnetwork
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
     agent = Agent(strategy, action_space, device)
+    
     memory = ReplayMemeory(memory_size)
 
+    # in
+    # if include_replaybuffer:
+    #     memory = ReplayMemeory(memory_size)
+    # else:
+    #     memory= None
+        
+    # if include_targetnetwork:
+    #     target_net = DQN(observation_space, action_space).to(device)    
+    # else:
+    #     target_net = None    
+    target_net = DQN(observation_space, action_space).to(device)    
+    
     policy_net = DQN(observation_space, action_space).to(device)
-    target_net = DQN(observation_space, action_space).to(device)
-
     optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
 
     # store info 
@@ -172,6 +183,7 @@ def main(env, memory_size): #-> add include_replay and include_Targetnetwork
         episode_loss = 0
         for timestep in count():
             env.render()
+            # print(timestep)
             action = agent.select_action(torch.from_numpy(state), policy_net)
             (next_state, reward, terminated, done,_) = env.step(action.item())
             # print(next_state, reward, terminated, done)
@@ -181,17 +193,42 @@ def main(env, memory_size): #-> add include_replay and include_Targetnetwork
             memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
             state = next_state
 
-            if memory.can_provide_sample(batch_size):
+            if include_replaybuffer and memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
                 states, actions, next_states, rewards = extract_tensors(experiences)
                 current_q_values = QValues.get_current(policy_net, states, actions)
-                next_q_values = QValues.get_next(target_net, next_states)
+                if include_targetnetwork:
+                    next_q_values = QValues.get_next(target_net, next_states)
+                else:
+                    next_q_values = QValues.get_next(policy_net, next_states)
+                    
                 target_q_values = rewards + (gamma * next_q_values) # Bellman eq
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
                 episode_loss += loss.item() # aad the loss for the episode
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                
+            if not include_replaybuffer:
+                # without replay buffer just manually convert to tensors instead of extract_tensors
+                states = torch.from_numpy(state).unsqueeze(0)
+                next_states = torch.from_numpy(next_state).unsqueeze(0)
+                rewards = torch.Tensor([reward])
+                
+                current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1)) # this is just get_current
+
+                if include_targetnetwork:
+                    next_q_values = QValues.get_next(target_net, next_states)
+                else:
+                    next_q_values = QValues.get_next(policy_net, next_states)
+
+                target_q_values = reward + (gamma * next_q_values)
+                loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
+                episode_loss += loss.item()
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                                
             if terminated: # was 'done', should be 'terminated'
                 episode_durations.append(timestep)
                 episode_rewards.append(episode_reward)
@@ -201,9 +238,10 @@ def main(env, memory_size): #-> add include_replay and include_Targetnetwork
 
                 #plot(episode_duration_ma, 100, env) # plot the duration by 100 moving average
                 break
+            
         print(f"episode {episode}: loss={episode_loss}")
 
-        if episode % target_update == 0:
+        if include_targetnetwork and episode % target_update == 0:
             target_net.load_state_dict(policy_net.state_dict())
 
         if get_moving_average(100, episode_duration_ma)[-1] >= 195:
