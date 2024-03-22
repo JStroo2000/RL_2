@@ -1,6 +1,6 @@
 import argparse
 import Q_learning
-
+import numpy as np
 # – Compare DQN with DQN−ER
 # – Compare DQN with DQN−TN
 # – Compare DQN with DQN−EP−TN
@@ -38,7 +38,16 @@ def main():
     else:
         include_targetnetwork = True
 
-    Q_learning.main(env, include_replaybuffer, include_targetnetwork) 
+    for epsilon in [0.3,0.2,0.1,0.05,0.01,0.005]:
+        print(f'epsilon: {epsilon}')
+        strategy = Q_learning.FixedEpsilon(epsilon)
+        rewards,episode_lengths = Q_learning.main(env, include_replaybuffer, include_targetnetwork,strategy) 
+        with open(f'rewards_run_{epsilon}.npy','wb') as f:
+            np.save(f, rewards)
+        with open(f'episode_length_{epsilon}','wb') as f:
+            np.save(f,episode_lengths)
+        print(f'mean reward: {np.mean(rewards[-50:])}')
+
 
 if __name__ == "__main__":
     main()
