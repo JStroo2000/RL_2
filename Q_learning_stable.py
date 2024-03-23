@@ -24,6 +24,39 @@ def extract_tensors(experiences: namedtuple):
             t_next_state,
             t_rewards)
 
+class QValues:
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    @staticmethod
+    def get_current(policy_net, states, actions):
+        return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
+
+    @staticmethod
+    def get_next(target_net, next_states):
+        final_states_location = next_states.flatten(start_dim=1)\
+          .max(dim=1)[0].eq(0).type(torch.bool)
+        non_final_states_locations = (final_states_location == False)
+        non_final_states = next_states[non_final_states_locations]
+        batch_size = next_states.shape[0]
+        values = torch.zeros(batch_size).to(QValues.device)
+        values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
+        return values
+
+def eval_policynet(env,policy_net, episode):
+        eval_rewards = []
+        for i in range(10):
+            state,_ = env.reset()
+            episode_reward=0 
+            while True:  
+                action = torch.argmax(policy_net(torch.from_numpy(state))).unsqueeze(dim=0)
+                (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
+                episode_reward += eval_reward
+                env.render()
+                if eval_terminated or eval_truncated:
+                    eval_rewards.append(episode_reward)
+                    break
+        print(f'Reward after {episode} episodes: {np.mean(eval_rewards)}')
+
 
 def main(env ,strategy ): #-> add include_replay and include_Targetnetwork
     
@@ -36,6 +69,7 @@ def main(env ,strategy ): #-> add include_replay and include_Targetnetwork
     memory_size = 100
     lr = 0.001
     num_episodes = 5000
+    eval_rate = 250
 
     eval_env = gym.make("CartPole-v1", render_mode = 'human')
     env = env
@@ -57,6 +91,8 @@ def main(env ,strategy ): #-> add include_replay and include_Targetnetwork
     episode_duration_ma = []
 
     for episode in range(num_episodes):
+        if episode%eval_rate==0:
+            eval_policynet(eval_env,policy_net,episode)
         state,_ = env.reset()
         episode_reward = 0
         episode_loss = 0
