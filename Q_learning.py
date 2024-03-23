@@ -18,9 +18,9 @@ class DQN(nn.Module):
 
     def __init__(self, n_observations, n_actions):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
-        self.layer3 = nn.Linear(128, n_actions)
+        self.layer1 = nn.Linear(n_observations, 64)
+        self.layer2 = nn.Linear(64, 64)
+        self.layer3 = nn.Linear(64, n_actions)
 
     def forward(self, x):
         x = F.relu(self.layer1(x))
@@ -143,6 +143,21 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
+def eval_policynet(env,policy_net, episode):
+        eval_rewards = []
+        for i in range(5):
+            state,_ = env.reset()
+            episode_reward=0 
+            while True:  
+                action = torch.argmax(policy_net(torch.from_numpy(state))).unsqueeze(dim=0)
+                (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
+                episode_reward += eval_reward
+                env.render()
+                if eval_terminated or eval_truncated:
+                    eval_rewards.append(episode_reward)
+                    break
+        print(f'Reward after {episode} episodes: {np.mean(eval_rewards)}')
+
 def main(env, include_replaybuffer, include_targetnetwork): #-> add include_replay and include_Targetnetwork
     
     #assert (exploration_policy == 'egreedy' or exploration_policy == 'boltzmann'), "exploration policy should be egreedy or boltzmann"
@@ -156,9 +171,10 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     target_update = 10 # --> For every 10 episode, we're going to update 
     memory_size = 200
     lr = 0.001
-    num_episodes = 1000
+    num_episodes = 10000
+    eval_rate = 1000
     current_q_values = np.array([0,0])
-    # env = gym.make("CartPole-v1", render_mode = 'human')
+    eval_env = gym.make("CartPole-v1", render_mode = 'human')
     env = env
     action_space = env.action_space.n
     observation_space = env.observation_space.shape[0]
@@ -190,6 +206,8 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     episode_duration_ma = []
 
     for episode in range(num_episodes):
+        if episode%eval_rate==0:
+            eval_policynet(eval_env,policy_net,episode)
         state,_ = env.reset()
         episode_reward = 0
         episode_loss = 0
@@ -247,12 +265,12 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 episode_rewards.append(episode_reward)
                 # episode_losses.append(episode_loss)
                 episode_duration_ma.append(timestep)
-                print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
+                #print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
 
                 #plot(episode_duration_ma, 100, env) # plot the duration by 100 moving average
                 break
             
-        print(f"episode {episode}: loss={episode_loss}")
+        #print(f"episode {episode}: loss={episode_loss}")
 
         if include_targetnetwork and episode % target_update == 0:
             target_net.load_state_dict(policy_net.state_dict())
