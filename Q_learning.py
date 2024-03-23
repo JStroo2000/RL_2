@@ -16,15 +16,16 @@ import matplotlib.pyplot as plt
 
 class DQN(nn.Module):
 
-    def __init__(self, n_observations, n_actions):
+    def __init__(self, n_observations, n_actions,layer1=64,layer2=64,activation=F.relu):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 64)
-        self.layer2 = nn.Linear(64, 64)
-        self.layer3 = nn.Linear(64, n_actions)
+        self.layer1 = nn.Linear(n_observations, layer1)
+        self.layer2 = nn.Linear(layer1, layer2)
+        self.layer3 = nn.Linear(layer2, n_actions)
+        self.activation = activation
 
     def forward(self, x):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
+        x = self.activation(self.layer1(x))
+        x = self.activation(self.layer2(x))
         return self.layer3(x)
 
 
@@ -236,7 +237,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 target_q_values = rewards + (gamma * next_q_values) # Bellman eq
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
                 episode_loss += loss.item() # aad the loss for the episode
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
                 optimizer.zero_grad()
                 
@@ -256,7 +257,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 target_q_values = reward + (gamma * next_q_values)
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
                 episode_loss += loss.item()
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
                 optimizer.zero_grad()
                                 
