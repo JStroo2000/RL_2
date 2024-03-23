@@ -31,14 +31,14 @@ def main():
         env = Q_learning.gym.make("CartPole-v1")
 
     if args.experience_replay:
-        include_replaybuffer = False # disable?
+        include_replaybuffer = True # disable?
     else:
-        include_replaybuffer = True  
+        include_replaybuffer = False  
         
     if args.target_network:
-        include_targetnetwork = False
-    else:
         include_targetnetwork = True
+    else:
+        include_targetnetwork = False
 
     for epsilon in [0.01,0.005]:
         print(f'epsilon: {epsilon}')

@@ -7,8 +7,20 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 from agent import Agent, ReplayMemeory,DQN,Experience
+from collections import namedtuple
 
+def extract_tensors(experiences: namedtuple):
 
+    batch = Experience(*zip(*experiences))
+    t_states = torch.stack(batch.state)
+    t_actions = torch.cat(batch.action)
+    t_next_state = torch.stack(batch.next_state)
+    t_rewards = torch.cat(batch.reward)
+
+    return (t_states,
+            t_actions,
+            t_next_state,
+            t_rewards)
 # Implementation inspired by: https://www.kaggle.com/code/dsxavier/dqn-openai-gym-cartpole-with-pytorch
 
 class QValues:
@@ -29,7 +41,7 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
-def eval_policynet(env,policy_net):
+def eval_policynet(env,policy_net, episode):
         eval_rewards = []
         for i in range(10):
             state,_ = env.reset()
@@ -38,7 +50,7 @@ def eval_policynet(env,policy_net):
                 action = torch.argmax(policy_net(torch.from_numpy(state)))
                 (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
                 episode_reward +=eval_reward
-                eval_env.render()
+                env.render()
                 if eval_terminated or eval_truncated:
                     eval_rewards.append(episode_reward)
                     break
@@ -70,16 +82,6 @@ def main(env, include_replaybuffer, include_targetnetwork,strategy ): #-> add in
     
     memory = ReplayMemeory(memory_size)
 
-    # in
-    # if include_replaybuffer:
-    #     memory = ReplayMemeory(memory_size)
-    # else:
-    #     memory= None
-        
-    # if include_targetnetwork:
-    #     target_net = DQN(observation_space, action_space).to(device)    
-    # else:
-    #     target_net = None    
     target_net = DQN(observation_space, action_space).to(device)    
     
     policy_net = DQN(observation_space, action_space).to(device)
@@ -92,20 +94,20 @@ def main(env, include_replaybuffer, include_targetnetwork,strategy ): #-> add in
 
     for episode in range(num_episodes):
         if episode%eval_rate==0:
-            eval_policynet(eval_env,policy_net)
+            eval_policynet(eval_env,policy_net,episode)
         state,_ = env.reset()
         episode_reward = 0
         episode_loss = 0
         for timestep in count():
             env.render()
             # print(timestep)
-            action = agent.select_action(torch.from_numpy(state), policy_net)
-            (next_state, reward, terminated, done,_) = env.step(action.item())
+            action = agent.select_action(state, policy_net)
+            (next_state, reward, terminated, truncated,_) = env.step(action.item()) # the second boolean is for when the run is truncated
             # print(next_state, reward, terminated, done)
             episode_reward += reward # add up reward for the episode
-            if terminated:
+            if terminated or truncated:
                 next_state,_ = env.reset()
-            memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
+            memory.push(Experience(torch.from_numpy(state), action.unsqueeze(-1), torch.from_numpy(next_state), torch.Tensor([reward])))
             state = next_state
 
             if include_replaybuffer and memory.can_provide_sample(batch_size):
@@ -129,7 +131,7 @@ def main(env, include_replaybuffer, include_targetnetwork,strategy ): #-> add in
                 states = torch.from_numpy(state).unsqueeze(0)
                 next_states = torch.from_numpy(next_state).unsqueeze(0)
                 rewards = torch.Tensor([reward])
-                
+                print(states.shape)
                 current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1)) # this is just get_current
 
                 if include_targetnetwork:

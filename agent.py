@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import namedtuple
-import math
+import numpy as np
 import random
 
 class DQN(nn.Module):
@@ -23,22 +23,6 @@ class DQN(nn.Module):
 Experience = namedtuple('Experience',
     ('state', 'action', 'next_state', 'reward')
     )
-
-def get_moving_average(period, values):
-    values = torch.tensor(values, dtype=torch.float)
-
-    if len(values) >= period: 
-
-
-        moving_avg = values.unfold(dimension=0,
-                                   size=period, 
-                                   step=1)\
-                                   .mean(dim=1).flatten(start_dim=0)
-        moving_avg = torch.cat((torch.zeros(period-1), moving_avg))
-        return moving_avg.numpy()
-    else:
-        moving_avg = torch.zeros(len(values))
-        return moving_avg.numpy()    
 
 
 class ReplayMemeory:
@@ -65,42 +49,37 @@ class EpsilonGreedyStrategy:
         self.start = start
         self.end = end
         self.decay = decay
+        self.current_step = 0
 
-    def get_exploration_rate(self, current_step: int) -> float:
+    def get_exploration_rate(self) -> float:
+        self.current_step += 1
         return self.end + (self.start - self.end) *\
-                math.exp(-1. * current_step * self.decay)
+                np.exp(-1. * self.current_step * self.decay)
 
 class FixedEpsilon:
     def __init__(self,epsilon):
         self.epsilon = epsilon
     
-    def get_exploration_rate(self, current_step):
+    def get_exploration_rate(self):
         return self.epsilon
 
 class Agent:
     def __init__(self, strategy, num_actions, device) -> None:
         self.strategy = strategy
         self.num_actions = num_actions
-        self.current_step = 0
         self.device = device
 
     def select_action(self, state, policy_net) -> float:
-
-        epsilon_rate = self.strategy.get_exploration_rate(self.current_step)
-        self.current_step += 1
-
+        epsilon = self.strategy.get_exploration_rate()
+        state = torch.from_numpy(state)
         # select an action
-        if epsilon_rate > random.random(): 
-            action = random.randrange(self.num_actions)
+        if epsilon > np.random.random(): 
+            action = np.random.randint(0,self.num_actions+1)
             return torch.tensor([action]).to(device=self.device) # explore
         else:
             with torch.no_grad(): 
-                return policy_net(state).\
-                       unsqueeze(dim=0).\
-                       argmax(dim=1).\
-                       to(device=self.device) # exploit
-
-
+                return torch.argmax(policy_net(state)).to(device=self.device) # exploit
+                       
 def extract_tensors(experiences: namedtuple):
 
     batch = Experience(*zip(*experiences))
