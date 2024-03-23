@@ -9,6 +9,7 @@ from itertools import count
 import math
 import random
 import matplotlib
+import numpy as np
 import matplotlib.pyplot as plt
 
 # Implementation inspired by: https://www.kaggle.com/code/dsxavier/dqn-openai-gym-cartpole-with-pytorch
@@ -67,16 +68,24 @@ class ReplayMemeory:
     def can_provide_sample(self, batch_size: int) -> bool:
         return len(self.memory) >= batch_size
 
-class EpsilonGreedyStrategy:
-    def __init__(self, start, end, decay):
+class exploration:
+    def __init__(self, policy, start=1, end=0.01, decay=0.001, temp=0.1, q_values=[0,0]):
         self.start = start
         self.end = end
         self.decay = decay
+        self.temp = temp
+        self.policy = policy
+        self.q_values = q_values
 
     def get_exploration_rate(self, current_step: int) -> float:
-        return self.end + (self.start - self.end) *\
+        if self.policy == 'egreedy':
+            return self.end + (self.start - self.end) *\
                 math.exp(-1. * current_step * self.decay)
-
+        elif self.policy == 'boltzmann':
+            x = self.q_values/self.temp
+            z = x - max(x)
+            softmax = np.exp(z)/sum(np.exp(z))
+            return min(softmax)
 
 class Agent:
     def __init__(self, strategy, num_actions, device) -> None:
@@ -136,23 +145,26 @@ class QValues:
 
 def main(env, include_replaybuffer, include_targetnetwork): #-> add include_replay and include_Targetnetwork
     
+    #assert (exploration_policy == 'egreedy' or exploration_policy == 'boltzmann'), "exploration policy should be egreedy or boltzmann"
+    exploration_policy='boltzmann'
     batch_size = 256
     gamma = 0.999 # --> discounted rate
     eps_start = 1 # --> Epsilon start
     eps_end = 0.01 # --> Epsilon end
     eps_decay = 0.001 # --> rate of Epsilon decay
+    temp = 0.1 # --> boltzmann policy temperature
     target_update = 10 # --> For every 10 episode, we're going to update 
     memory_size = 100000
     lr = 0.001
     num_episodes = 1000
-
+    current_q_values = np.array([0,0])
     # env = gym.make("CartPole-v1", render_mode = 'human')
     env = env
     action_space = env.action_space.n
     observation_space = env.observation_space.shape[0]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
+    strategy = exploration(exploration_policy, eps_start, eps_end, eps_decay, temp, current_q_values)
     agent = Agent(strategy, action_space, device)
     
     memory = ReplayMemeory(memory_size)
@@ -192,7 +204,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 next_state,_ = env.reset()
             memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
             state = next_state
-
+            agent.strategy.q_values = policy_net(torch.tensor(state)).detach().numpy()
             if include_replaybuffer and memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
                 states, actions, next_states, rewards = extract_tensors(experiences)
