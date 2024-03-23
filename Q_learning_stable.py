@@ -68,8 +68,8 @@ def main(env ,strategy ): #-> add include_replay and include_Targetnetwork
     target_update = 50 # --> For every 10 episode, we're going to update 
     memory_size = 100
     lr = 0.001
-    num_episodes = 5000
-    eval_rate = 250
+    num_episodes = 50000
+    eval_rate = 1000
 
     eval_env = gym.make("CartPole-v1", render_mode = 'human')
     env = env
