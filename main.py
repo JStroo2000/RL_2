@@ -18,7 +18,7 @@ def main():
 
     print("possible commands:")
     print("--human-render: enable visualization")
-    print("--experience replay: disable replay buffer")
+    print("--experience-replay: disable replay buffer")
     print("--target-network: disable target network")
 
     input("Press enter to continue...")

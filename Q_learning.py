@@ -147,14 +147,14 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     
     #assert (exploration_policy == 'egreedy' or exploration_policy == 'boltzmann'), "exploration policy should be egreedy or boltzmann"
     exploration_policy='boltzmann'
-    batch_size = 256
+    batch_size = 32
     gamma = 0.999 # --> discounted rate
     eps_start = 1 # --> Epsilon start
     eps_end = 0.01 # --> Epsilon end
     eps_decay = 0.001 # --> rate of Epsilon decay
     temp = 0.1 # --> boltzmann policy temperature
     target_update = 10 # --> For every 10 episode, we're going to update 
-    memory_size = 100000
+    memory_size = 200
     lr = 0.001
     num_episodes = 1000
     current_q_values = np.array([0,0])
@@ -197,10 +197,11 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
             env.render()
             # print(timestep)
             action = agent.select_action(torch.from_numpy(state), policy_net)
-            (next_state, reward, terminated, done,_) = env.step(action.item())
+            (next_state, reward, terminated, truncated,_) = env.step(action.item())
+
             # print(next_state, reward, terminated, done)
             episode_reward += reward # add up reward for the episode
-            if terminated:
+            if terminated or truncated:
                 next_state,_ = env.reset()
             memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
             state = next_state
@@ -241,7 +242,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 optimizer.step()
                 optimizer.zero_grad()
                                 
-            if terminated: # was 'done', should be 'terminated'
+            if terminated or truncated: # was 'done', should be 'terminated'
                 episode_durations.append(timestep)
                 episode_rewards.append(episode_reward)
                 # episode_losses.append(episode_loss)
