@@ -49,7 +49,7 @@ def get_moving_average(period, values):
         return moving_avg.numpy()    
 
 
-class ReplayMemeory:
+class ReplayMemory:
     def __init__(self, capacity):
         self.capacity = capacity
         self.memory = []
@@ -183,11 +183,11 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     strategy = exploration(exploration_policy, eps_start, eps_end, eps_decay, temp, current_q_values)
     agent = Agent(strategy, action_space, device)
     
-    memory = ReplayMemeory(memory_size)
+    memory = ReplayMemory(memory_size)
 
     # in
     # if include_replaybuffer:
-    #     memory = ReplayMemeory(memory_size)
+    #     memory = ReplayMemory(memory_size)
     # else:
     #     memory= None
         
