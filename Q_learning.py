@@ -45,11 +45,11 @@ def eval_policynet(env,policy_net, episode):
         eval_rewards = []
         for i in range(10):
             state,_ = env.reset()
+            episode_reward=0 
             while True:  
-                episode_reward=0             
-                action = torch.argmax(policy_net(torch.from_numpy(state)))
+                action = torch.argmax(policy_net(torch.from_numpy(state))).unsqueeze(dim=0)
                 (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
-                episode_reward +=eval_reward
+                episode_reward += eval_reward
                 env.render()
                 if eval_terminated or eval_truncated:
                     eval_rewards.append(episode_reward)
@@ -102,6 +102,7 @@ def main(env, include_replaybuffer, include_targetnetwork,strategy ): #-> add in
             env.render()
             # print(timestep)
             action = agent.select_action(state, policy_net)
+
             (next_state, reward, terminated, truncated,_) = env.step(action.item()) # the second boolean is for when the run is truncated
             # print(next_state, reward, terminated, done)
             episode_reward += reward # add up reward for the episode
@@ -131,7 +132,6 @@ def main(env, include_replaybuffer, include_targetnetwork,strategy ): #-> add in
                 states = torch.from_numpy(state).unsqueeze(0)
                 next_states = torch.from_numpy(next_state).unsqueeze(0)
                 rewards = torch.Tensor([reward])
-                print(states.shape)
                 current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1)) # this is just get_current
 
                 if include_targetnetwork:

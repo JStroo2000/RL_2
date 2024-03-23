@@ -71,7 +71,7 @@ def main(env ,strategy ): #-> add include_replay and include_Targetnetwork
             if memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
                 states, actions, next_states, rewards = extract_tensors(experiences)
-                current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1)) # this is just get_current
+                current_q_values = policy_net(states).gather(dim=1, index=actions.unsqueeze(-1)) # this is just get_current
                 next_q_values = QValues.get_next(policy_net, next_states)
                 target_q_values = reward + (gamma * next_q_values)
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))

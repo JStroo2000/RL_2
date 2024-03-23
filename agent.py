@@ -74,8 +74,8 @@ class Agent:
         state = torch.from_numpy(state)
         # select an action
         if epsilon > np.random.random(): 
-            action = np.random.randint(0,self.num_actions+1)
-            return torch.tensor([action]).to(device=self.device) # explore
+            action = np.random.randint(0,self.num_actions)
+            return torch.tensor(action).to(device=self.device) # explore
         else:
             with torch.no_grad(): 
                 return torch.argmax(policy_net(state)).to(device=self.device) # exploit
