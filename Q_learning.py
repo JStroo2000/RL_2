@@ -144,6 +144,9 @@ class QValues:
         values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
+
+
+
 def eval_policynet(env,policy_net, episode):
         eval_rewards = []
         for i in range(5):
@@ -162,7 +165,7 @@ def eval_policynet(env,policy_net, episode):
 def main(env, include_replaybuffer, include_targetnetwork): #-> add include_replay and include_Targetnetwork
     
     #assert (exploration_policy == 'egreedy' or exploration_policy == 'boltzmann'), "exploration policy should be egreedy or boltzmann"
-    exploration_policy='boltzmann'
+    exploration_policy='egreedy'
     batch_size = 32
     gamma = 0.999 # --> discounted rate
     eps_start = 1 # --> Epsilon start
