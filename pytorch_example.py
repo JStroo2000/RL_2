@@ -2,6 +2,7 @@ import gymnasium as gym
 import math
 import random
 import matplotlib
+matplotlib.use('tkAgg')
 import matplotlib.pyplot as plt
 from collections import namedtuple, deque
 from itertools import count
@@ -224,6 +225,7 @@ def main():
     plot_durations(show_result=True)
     plt.ioff()
     plt.show()
-
+    env.close()
+    
 if __name__ == '__main__':
     main()
