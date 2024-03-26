@@ -132,7 +132,7 @@ class QValues:
         non_final_states_locations = (final_states_location == False)
         non_final_states = next_states[non_final_states_locations]
         batch_size = next_states.shape[0]
-        values = torch.zeros(batch_size).to(QValues.device)
+        values = torch.zeros(batch_size).to(device)
         with torch.no_grad():
             values[non_final_states_locations] = target_net(non_final_states).max(dim=1).values
         return values
@@ -167,7 +167,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     target_update = 10 # --> For every 10 episode, we're going to update 
     memory_size = 200
     lr = 0.0001
-    lr_target = 0.005
+    lr_target = 0.1
     num_episodes = 7000
     eval_rate = 500
     current_q_values = np.array([0,0])
@@ -236,16 +236,16 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 states = torch.cat(batch.state)
                 actions = torch.cat(batch.action)
                 rewards = torch.cat(batch.reward)
-                current_q_values = QValues.get_current(policy_net, states, actions)
+                current_q_values = QValues.get_current(policy_net, states, actions,device)
                 next_q_values = torch.zeros(batch_size, device=device)
                 if include_targetnetwork:
-                    next_q_values[non_final_mask] = QValues.get_next(target_net, non_final_next_states)
+                    next_q_values[non_final_mask] = QValues.get_next(target_net, non_final_next_states,device)
                 else:
-                    next_q_values[non_final_mask] = QValues.get_next(policy_net, non_final_next_states)
+                    next_q_values[non_final_mask] = QValues.get_next(policy_net, non_final_next_states,device)
                     
                 target_q_values = rewards + (gamma * next_q_values) # Bellman eq
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
-                episode_loss += loss.item() # aad the loss for the episode
+                episode_loss += loss.item() # add the loss for the episode
                 loss.backward()
                 torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
                 optimizer.step()
@@ -272,7 +272,6 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 optimizer.zero_grad()
                                 
             if terminated or truncated: # was 'done', should be 'terminated'
-
                 episode_durations.append(timestep)
                 episode_rewards.append(episode_reward)
                 # episode_losses.append(episode_loss)
@@ -284,12 +283,12 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
             
         #print(f"episode {episode}: loss={episode_loss}")
 
-        if include_targetnetwork and episode % target_update == 0:
-            target_net_state_dict = target_net.state_dict()
-            policy_net_state_dict = policy_net.state_dict()
-            for key in policy_net_state_dict:
-                target_net_state_dict[key] = policy_net_state_dict[key]*lr_target + target_net_state_dict[key]*(1-lr_target)
-            target_net.load_state_dict(target_net_state_dict)
+        #if include_targetnetwork and episode % target_update == 0:
+        target_net_state_dict = target_net.state_dict()
+        policy_net_state_dict = policy_net.state_dict()
+        for key in policy_net_state_dict:
+            target_net_state_dict[key] = policy_net_state_dict[key]*lr_target + target_net_state_dict[key]*(1-lr_target)
+        target_net.load_state_dict(target_net_state_dict)
 
     env.close()
 
