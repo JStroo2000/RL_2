@@ -38,7 +38,7 @@ def main():
     else:
         include_targetnetwork = True
 
-    Q_learning.main(env, include_replaybuffer, include_targetnetwork) 
+    Q_learning2.main(env, include_replaybuffer, include_targetnetwork) 
 
 if __name__ == "__main__":
     main()
