@@ -1,5 +1,4 @@
 import gymnasium as gym
-from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -37,8 +36,6 @@ def get_moving_average(period, values):
     values = torch.tensor(values, dtype=torch.float)
 
     if len(values) >= period: 
-
-
         moving_avg = values.unfold(dimension=0,
                                    size=period, 
                                    step=1)\
@@ -106,7 +103,7 @@ class Agent:
             return torch.tensor([action]).to(device=self.device) # explore
         else:
             with torch.no_grad(): 
-                return policy_net(state).\
+                return policy_net(state.to((self.device))).\
                        unsqueeze(dim=0).\
                        argmax(dim=1).\
                        to(device=self.device) # exploit
@@ -127,33 +124,31 @@ def extract_tensors(experiences: namedtuple):
 
 
 class QValues:
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    @staticmethod
+    def get_current(policy_net, states, actions,device):
+        return policy_net(states.to(device)).gather(dim=1, index=actions.unsqueeze(-1))
 
     @staticmethod
-    def get_current(policy_net, states, actions):
-        return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
-
-    @staticmethod
-    def get_next(target_net, next_states):
+    def get_next(target_net, next_states,device):
         final_states_location = next_states.flatten(start_dim=1)\
           .max(dim=1)[0].eq(0).type(torch.bool)
         non_final_states_locations = (final_states_location == False)
         non_final_states = next_states[non_final_states_locations]
         batch_size = next_states.shape[0]
-        values = torch.zeros(batch_size).to(QValues.device)
-        values[non_final_states_locations] = target_net(non_final_states).max(dim=1)[0].detach()
+        values = torch.zeros(batch_size).to(device)
+        values[non_final_states_locations] = target_net(non_final_states.to(device)).max(dim=1)[0].detach()
         return values
 
 
 
 
-def eval_policynet(env,policy_net, episode):
+def eval_policynet(env,policy_net, episode,device):
         eval_rewards = []
         for i in range(5):
             state,_ = env.reset()
             episode_reward=0 
             while True:  
-                action = torch.argmax(policy_net(torch.from_numpy(state))).unsqueeze(dim=0)
+                action = torch.argmax(policy_net(torch.from_numpy(state).to(device))).unsqueeze(dim=0)
                 (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
                 episode_reward += eval_reward
                 env.render()
@@ -174,6 +169,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     temp = 0.1 # --> boltzmann policy temperature
     target_update = 10 # --> For every 10 episode, we're going to update 
     memory_size = 200
+    target_lr = 0.01
     lr = 0.001
     num_episodes = 10000
     eval_rate = 1000
@@ -211,7 +207,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
 
     for episode in range(num_episodes):
         if episode%eval_rate==0:
-            eval_policynet(eval_env,policy_net,episode)
+            eval_policynet(eval_env,policy_net,episode,device)
         state,_ = env.reset()
         episode_reward = 0
         episode_loss = 0
@@ -225,17 +221,17 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
             episode_reward += reward # add up reward for the episode
             if terminated or truncated:
                 next_state,_ = env.reset()
-            memory.push(Experience(torch.from_numpy(state), action, torch.from_numpy(next_state), torch.Tensor([reward])))
+            memory.push(Experience(torch.from_numpy(state).to(device), action, torch.from_numpy(next_state).to(device), torch.Tensor([reward]).to(device)))
             state = next_state
-            agent.strategy.q_values = policy_net(torch.tensor(state)).detach().numpy()
+            agent.strategy.q_values = policy_net(torch.tensor(state).to(device)).detach().cpu().numpy()
             if include_replaybuffer and memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
                 states, actions, next_states, rewards = extract_tensors(experiences)
-                current_q_values = QValues.get_current(policy_net, states, actions)
+                current_q_values = QValues.get_current(policy_net, states, actions,device)
                 if include_targetnetwork:
-                    next_q_values = QValues.get_next(target_net, next_states)
+                    next_q_values = QValues.get_next(target_net, next_states,device)
                 else:
-                    next_q_values = QValues.get_next(policy_net, next_states)
+                    next_q_values = QValues.get_next(policy_net, next_states,device)
                     
                 target_q_values = rewards + (gamma * next_q_values) # Bellman eq
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
@@ -246,16 +242,16 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 
             if not include_replaybuffer:
                 # without replay buffer just manually convert to tensors instead of extract_tensors
-                states = torch.from_numpy(state).unsqueeze(0)
-                next_states = torch.from_numpy(next_state).unsqueeze(0)
-                rewards = torch.Tensor([reward])
+                states = torch.from_numpy(state).unsqueeze(0).to(device)
+                next_states = torch.from_numpy(next_state).unsqueeze(0).to(device)
+                rewards = torch.Tensor([reward]).to(device)
                 
                 current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1)) # this is just get_current
 
                 if include_targetnetwork:
-                    next_q_values = QValues.get_next(target_net, next_states)
+                    next_q_values = QValues.get_next(target_net, next_states,device)
                 else:
-                    next_q_values = QValues.get_next(policy_net, next_states)
+                    next_q_values = QValues.get_next(policy_net, next_states,device)
 
                 target_q_values = reward + (gamma * next_q_values)
                 loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
@@ -277,10 +273,16 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
         #print(f"episode {episode}: loss={episode_loss}")
 
         if include_targetnetwork and episode % target_update == 0:
-            target_net.load_state_dict(policy_net.state_dict())
+            target_net_state_dict = target_net.state_dict()
+            policy_net_state_dict = policy_net.state_dict()
+            for key in policy_net_state_dict:
+                target_net_state_dict[key] = policy_net_state_dict[key]*target_lr + target_net_state_dict[key]*(1-target_lr)
+            target_net.load_state_dict(target_net_state_dict)
 
-        if get_moving_average(100, episode_duration_ma)[-1] >= 195:
-            break
+#            target_net.load_state_dict(policy_net.state_dict())
+
+#        if get_moving_average(100, episode_duration_ma)[-1] >= 195:
+#            break
     env.close()
 
 
