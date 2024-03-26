@@ -1,5 +1,5 @@
 import argparse
-import Q_learning
+import Q_learning2
 
 # – Compare DQN with DQN−ER
 # – Compare DQN with DQN−TN
@@ -24,9 +24,9 @@ def main():
     input("Press enter to continue...")
 
     if args.human_render:
-        env = Q_learning.gym.make("CartPole-v1", render_mode='human')
+        env = Q_learning2.gym.make("CartPole-v1", render_mode='human')
     else:
-        env = Q_learning.gym.make("CartPole-v1")
+        env = Q_learning2.gym.make("CartPole-v1")
 
     if args.experience_replay:
         include_replaybuffer = False # disable?

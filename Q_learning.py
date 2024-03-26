@@ -8,6 +8,7 @@ from itertools import count
 import math
 import random
 import matplotlib
+matplotlib.use('tkAgg')
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -148,7 +149,7 @@ def eval_policynet(env,policy_net, episode, device):
                 action = torch.argmax(policy_net(state),dim=-1)
                 (next_state, eval_reward, eval_terminated, eval_truncated,_) = env.step(action.item())
                 episode_reward += eval_reward
-                env.render()
+                #env.render()
                 if eval_terminated or eval_truncated:
                     eval_rewards.append(episode_reward)
                     break
@@ -168,10 +169,10 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     memory_size = 200
     lr = 0.0001
     lr_target = 0.1
-    num_episodes = 7000
+    num_episodes = 1500
     eval_rate = 500
     current_q_values = np.array([0,0])
-    eval_env = gym.make("CartPole-v1", render_mode = 'human')
+    eval_env = gym.make("CartPole-v1")#, render_mode = 'human')
     env = env
     action_space = env.action_space.n
     observation_space = env.observation_space.shape[0]
@@ -209,7 +210,7 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
         episode_reward = 0
         episode_loss = 0
         for timestep in count():
-            env.render()
+            #env.render()
             # print(timestep)           
             action = agent.select_action(state, policy_net)
             (next_state, reward, terminated, truncated,_) = env.step(action.item())
