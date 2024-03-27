@@ -39,12 +39,24 @@ def main():
         include_targetnetwork = True
     
     # gridsearch
-    layer1_values = [32, 64]
-    layer2_values = [32, 64]
-    learning_rates = [0.0001, 0.001]
-    exploration_factors = [0.9, 0.95]
+    search_space = {
+    'layer1': [16,32, 64, 128],
+    'layer2': [16,32, 64, 128],
+    'lr': [0.0001,0.0005, 0.001, 0.005],
+    'lr_target': [.2,.1,.05,.01],
+    'exploration_strat': ['egreedy_decay','egreedy','boltzman'],
+    'gamma': [0.9,0.99, 0.999],
+    'batch_size': [16,32,64,128,256],
+    'memory_size': [50,100,200,500]
+    }
 
-    Q_learning.main(env, include_replaybuffer, include_targetnetwork, layer1_values, layer2_values, learning_rates, exploration_factors)
+
+    exp_dict = {'egreedy_decay':[(.9,.0001,.05),(.9,.001,.05),(.9,.0001,.001)],
+                    'egreedy':[.9,.95,.99],
+                    'boltzman':[.2,.1,.05,.01]}
+
+    Q_learning.main(env, include_replaybuffer, include_targetnetwork, 
+                    search_space, exp_dict,50)
 
 if __name__ == "__main__":
     main()

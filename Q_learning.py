@@ -4,9 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from collections import namedtuple, deque
-from itertools import count
-import math
-import random
+from itertools import count, product
+import math,pickle,random
 import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
@@ -88,16 +87,16 @@ class exploration:
         self.q_values = q_values
 
     def get_exploration_rate(self, current_step: int) -> float:
-        if self.policy == 'egreedy':
+        if self.policy == 'egreedy_decay':
             return self.end + (self.start - self.end) *\
-                math.exp(-1. * current_step * self.decay)
-            # return 0.9
+                np.exp(-1. * current_step * self.decay)
+        elif self.policy == 'egreedy':
+            return self.start
         elif self.policy == 'boltzmann':
             x = self.q_values/self.temp
             z = x - max(x)
             softmax = np.exp(z)/sum(np.exp(z))
             return min(softmax)
-
 
 
 class Agent:
@@ -173,7 +172,8 @@ def eval_policynet(env,policy_net, episode, device):
                     break
         print(f'Reward after {episode} episodes: {np.mean(eval_rewards)}')
 
-def main(env, include_replaybuffer, include_targetnetwork, layer1_values, layer2_values, learning_rates, exploration_factors):
+def main(env, include_replaybuffer, include_targetnetwork, 
+                    search_space, exp_dict,nr_searches):
     
     # right now decay is done each timestep, not each episode. -> smaller decay means longer time til very low exploration, which means better performance
     # gridsearch over startvalues for epsilon probably not very valuable, maybe go over different decay values
@@ -183,137 +183,147 @@ def main(env, include_replaybuffer, include_targetnetwork, layer1_values, layer2
     all_episode_durations = []
     summaries = []
 
-    for layer1 in layer1_values:
-        for layer2 in layer2_values:
-            for lr in learning_rates:
-                for exploration_factor in exploration_factors:
-                    exploration_policy='egreedy'
-                    batch_size = 32
-                    gamma = 0.999
-                    eps_start = exploration_factor
-                    eps_end = 0.05
-                    eps_decay = 0.0001
-                    temp = 0.1
-                    target_update = 100
-                    memory_size = 200
-                    lr_target = 0.1
-                    num_episodes = 2500
-                    eval_rate = 100
-                    current_q_values = np.array([0,0])
-                    eval_env = gym.make("CartPole-v1")
-                    action_space = env.action_space.n
-                    observation_space = env.observation_space.shape[0]
-                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                    strategy = exploration('egreedy', eps_start, eps_end, eps_decay, temp, current_q_values)
-                    agent = Agent(strategy, action_space, device)
-                    memory = ReplayMemory(memory_size)
-                    target_net = DQN(observation_space, action_space, layer1, layer2).to(device)
-                    policy_net = DQN(observation_space, action_space, layer1, layer2).to(device)
-                    optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
-                    
-                    episode_rewards = []
-                    episode_durations = []
+    for search in range(nr_searches):
+        param_dict = {key:np.random.choice(value) for key,value in search_space.items()}
 
-                    for episode in range(num_episodes):
-                        if episode%eval_rate==0:
-                            eval_policynet(eval_env,policy_net,episode, device)
-                        state,_ = env.reset()
-                        state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                        episode_reward = 0
-                        episode_loss = 0
-                        for timestep in count():
-                            env.render()         
-                            action = agent.select_action(state, policy_net)
-                            (next_state, reward, terminated, truncated,_) = env.step(action.item())
-                            episode_reward += reward
-                            reward = torch.tensor([reward], device=device)
-                            if terminated:
-                                next_state = None
-                            else:
-                                next_state = torch.tensor(next_state, dtype=torch.float32, device=device).unsqueeze(0)
-                            memory.push(state, action, next_state, reward)
-                            state = next_state
-                            if include_replaybuffer and memory.can_provide_sample(batch_size):
-                                experiences = memory.sample(batch_size)
-                                batch = Experience(*zip(*experiences))
-                                non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                                    batch.next_state)), device=device, dtype=torch.bool)
-                                non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-                                states = torch.cat(batch.state)
-                                actions = torch.cat(batch.action)
-                                rewards = torch.cat(batch.reward)
-                                current_q_values = QValues.get_current(policy_net, states, actions,device)
-                                next_q_values = torch.zeros(batch_size, device=device)
-                                if include_targetnetwork:
-                                    next_q_values[non_final_mask] = QValues.get_next(target_net, non_final_next_states,device)
-                                else:
-                                    next_q_values[non_final_mask] = QValues.get_next(policy_net, non_final_next_states,device)
+        batch_size = param_dict['batch_size']
+        gamma = param_dict['gamma']
+        memory_size = int(param_dict['memory_size'])
+        exploration_strat = param_dict['exploration_strat']
+        layer1 = param_dict['layer1']
+        layer2 = param_dict['layer2']
+        lr = param_dict['lr']
+        lr_target = param_dict['lr_target']
+
+        eps_start = 0.9
+        eps_end = 0.05
+        eps_decay = 0.0001
+        temp = 0.1
+        if exploration_strat == 'egreedy_decay':
+            index = np.random.randint(0,len(exp_dict[exploration_strat]))
+            eps_start,eps_decay,eps_decay = exp_dict[exploration_strat][index]
+            
+        elif exploration_strat == 'egreedy':
+            eps_start = np.random.choice(exp_dict[exploration_strat])
+        elif exploration_strat == 'boltzman':
+            temp = np.random.choice(exp_dict[exploration_strat])
+        param_dict['exploration_param'] = {'eps_start':eps_start,
+                                            'eps_decay':eps_decay,
+                                            'eps_end':eps_end,
+                                            'temp':temp}
+
+        num_episodes = 5000
+        eval_rate = 1000
+        current_q_values = np.array([0,0])
+        eval_env = gym.make("CartPole-v1")
+        action_space = env.action_space.n
+        observation_space = env.observation_space.shape[0]
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        strategy = exploration(exploration_strat, eps_start, eps_end, eps_decay, temp, current_q_values)
+        agent = Agent(strategy, action_space, device)
+        memory = ReplayMemory(memory_size)
+        target_net = DQN(observation_space, action_space, layer1, layer2).to(device)
+        policy_net = DQN(observation_space, action_space, layer1, layer2).to(device)
+        optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
+        
+        episode_rewards = []
+        episode_durations = []
+
+        for episode in range(num_episodes):
+            if episode%eval_rate==0:
+                eval_policynet(eval_env,policy_net,episode, device)
+            state,_ = env.reset()
+            state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+            episode_reward = 0
+            episode_loss = 0
+            for timestep in count():
+                env.render()         
+                action = agent.select_action(state, policy_net)
+                (next_state, reward, terminated, truncated,_) = env.step(action.item())
+                episode_reward += reward
+                reward = torch.tensor([reward], device=device)
+                if terminated:
+                    next_state = None
+                else:
+                    next_state = torch.tensor(next_state, dtype=torch.float32, device=device).unsqueeze(0)
+                memory.push(state, action, next_state, reward)
+                state = next_state
+                if include_replaybuffer and memory.can_provide_sample(batch_size):
+                    experiences = memory.sample(batch_size)
+                    batch = Experience(*zip(*experiences))
+                    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                                        batch.next_state)), device=device, dtype=torch.bool)
+                    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+                    states = torch.cat(batch.state)
+                    actions = torch.cat(batch.action)
+                    rewards = torch.cat(batch.reward)
+                    current_q_values = QValues.get_current(policy_net, states, actions,device)
+                    next_q_values = torch.zeros(batch_size, device=device)
+                    if include_targetnetwork:
+                        next_q_values[non_final_mask] = QValues.get_next(target_net, non_final_next_states,device)
+                    else:
+                        next_q_values[non_final_mask] = QValues.get_next(policy_net, non_final_next_states,device)
+                        
+                    target_q_values = rewards + (gamma * next_q_values)
+                    loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
+                    episode_loss += loss.item()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    
+                if not include_replaybuffer:
+                    states = torch.from_numpy(state).unsqueeze(0).to(device)
+                    next_states = torch.from_numpy(next_state).unsqueeze(0).to(device)
+                    rewards = torch.Tensor([reward]).to(device)
+                    
+                    current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1))
+
+                    if include_targetnetwork:
+                        next_q_values = QValues.get_next(target_net, next_states,device)
+                    else:
+                        next_q_values = QValues.get_next(policy_net, next_states,device)
+
+                    target_q_values = reward + (gamma * next_q_values)
+                    loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
+                    episode_loss += loss.item()
+                    loss.backward(retain_graph=True)
+                    optimizer.step()
+                    optimizer.zero_grad()
                                     
-                                target_q_values = rewards + (gamma * next_q_values)
-                                loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
-                                episode_loss += loss.item()
-                                loss.backward()
-                                torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
-                                optimizer.step()
-                                optimizer.zero_grad()
-                                
-                            if not include_replaybuffer:
-                                states = torch.from_numpy(state).unsqueeze(0).to(device)
-                                next_states = torch.from_numpy(next_state).unsqueeze(0).to(device)
-                                rewards = torch.Tensor([reward]).to(device)
-                                
-                                current_q_values = policy_net(states).gather(dim=1, index=action.unsqueeze(-1))
+                if terminated or truncated:
+                    episode_durations.append(timestep)
+                    episode_rewards.append(episode_reward)
+                    #print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
+                    break
 
-                                if include_targetnetwork:
-                                    next_q_values = QValues.get_next(target_net, next_states,device)
-                                else:
-                                    next_q_values = QValues.get_next(policy_net, next_states,device)
+                
+            #print(f"episode {episode}: loss={episode_loss}")
+            target_net_state_dict = target_net.state_dict()
+            policy_net_state_dict = policy_net.state_dict()
+            for key in policy_net_state_dict:
+                target_net_state_dict[key] = policy_net_state_dict[key]*lr_target + target_net_state_dict[key]*(1-lr_target)
+            target_net.load_state_dict(target_net_state_dict)
+            moving_avg = get_moving_average(50, episode_durations)[-1] # can also be 100
+            if moving_avg >= 50:       # change these to higher
+                break
+            # idea for below is: if moving avg is high already, limit exploration to 0.1 to prevent runs stopping early due to exploration
+                # if moving_avg < 200:
+                #     strategy = exploration(exploration_policy, 0.01, 0.01, eps_decay, temp, current_q_values)
+                # else:
+                #     break
+        
+        all_episode_rewards.append(episode_rewards)
+        all_episode_durations.append(episode_durations)
+        avg_reward = np.mean(episode_rewards)
+        total_episodes = len(episode_rewards)
+        param_dict['avg_reward']= avg_reward
+        param_dict['total_episodes']= total_episodes
 
-                                target_q_values = reward + (gamma * next_q_values)
-                                loss = F.mse_loss(current_q_values, target_q_values.unsqueeze(1))
-                                episode_loss += loss.item()
-                                loss.backward(retain_graph=True)
-                                optimizer.step()
-                                optimizer.zero_grad()
-                                                
-                            if terminated or truncated:
-                                episode_durations.append(timestep)
-                                episode_rewards.append(episode_reward)
-                                print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
-                                break
-
-                            
-                        print(f"episode {episode}: loss={episode_loss}")
-                        target_net_state_dict = target_net.state_dict()
-                        policy_net_state_dict = policy_net.state_dict()
-                        for key in policy_net_state_dict:
-                            target_net_state_dict[key] = policy_net_state_dict[key]*lr_target + target_net_state_dict[key]*(1-lr_target)
-                        target_net.load_state_dict(target_net_state_dict)
-                        moving_avg = get_moving_average(50, episode_durations)[-1] # can also be 100
-                        if moving_avg >= 50:       # change these to higher
-                            break
-                        # idea for below is: if moving avg is high already, limit exploration to 0.1 to prevent runs stopping early due to exploration
-                            # if moving_avg < 200:
-                            #     strategy = exploration(exploration_policy, 0.01, 0.01, eps_decay, temp, current_q_values)
-                            # else:
-                            #     break
-                    
-                    all_episode_rewards.append(episode_rewards)
-                    all_episode_durations.append(episode_durations)
-                    avg_reward = np.mean(episode_rewards)
-                    total_episodes = len(episode_rewards)
-                    summary = {
-                        'layer1': layer1,
-                        'layer2': layer2,
-                        'lr': lr,
-                        'exploration_factor': exploration_factor,
-                        'avg_reward': avg_reward,
-                        'total_episodes': total_episodes
-                    }
-                    summaries.append(summary)
-                    
-                    print("done for this run")
-                    eval_env.close()
+        summaries.append(param_dict)
+        
+        print("done for this run")
+        eval_env.close()
     
     print("\ntraining summaries:")
     for i, summary in enumerate(summaries):
@@ -321,7 +331,8 @@ def main(env, include_replaybuffer, include_targetnetwork, layer1_values, layer2
         for key, value in summary.items():
             print(f"{key}: {value}")
         print("="*50)
-        
+    with open('grid_result.pickle','wb') as f:
+        pickle.dump(summaries,f)
     # plot results
     plt.figure(figsize=(10, 5))
     
