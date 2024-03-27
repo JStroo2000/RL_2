@@ -13,6 +13,22 @@ import matplotlib.pyplot as plt
 
 # Implementation inspired by: https://www.kaggle.com/code/dsxavier/dqn-openai-gym-cartpole-with-pytorch
 
+# DQN agent with:
+# – Different exploration strategies (at least two)
+# – Experience replay (train with a replay buffer)
+# – Target network (use another network to provide the update target)
+# • Tune hyper-parameters:
+# – network architecture (number of layers, number of neurons)
+# – learning rate
+# – exploration factor
+# – The three above are just examples. Think about which are relevant, reason in your report why
+# you choose them and what their effect on learning is.
+# • Ablation Study: compare different models in terms of learning speed, performance, stability(− here
+# means part of the model is removed, either experience replay(ER) or target network(TN) or both.):
+# – Compare DQN with DQN−ER
+# – Compare DQN with DQN−TN
+# – Compare DQN with DQN−EP−TN
+
 class DQN(nn.Module):
 
     def __init__(self, n_observations, n_actions,layer1=64,layer2=64,activation=F.relu):
@@ -75,11 +91,14 @@ class exploration:
         if self.policy == 'egreedy':
             return self.end + (self.start - self.end) *\
                 math.exp(-1. * current_step * self.decay)
+            # return 0.9
         elif self.policy == 'boltzmann':
             x = self.q_values/self.temp
             z = x - max(x)
             softmax = np.exp(z)/sum(np.exp(z))
             return min(softmax)
+
+
 
 class Agent:
     def __init__(self, strategy, num_actions, device) -> None:
@@ -160,18 +179,18 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
     exploration_policy='egreedy'
     batch_size = 32
     gamma = 0.999 # --> discounted rate
-    eps_start = .9 # --> Epsilon start
+    eps_start = 0.9 # --> Epsilon start
     eps_end = 0.05 # --> Epsilon end
-    eps_decay = 0.001 # --> rate of Epsilon decay
+    eps_decay = 0.0001 # --> rate of Epsilon decay
     temp = 0.1 # --> boltzmann policy temperature
-    target_update = 10 # --> For every 10 episode, we're going to update 
+    target_update = 100 # --> For every 10 episode, we're going to update 
     memory_size = 200
     lr = 0.0001
     lr_target = 0.1
-    num_episodes = 7000
-    eval_rate = 500
+    num_episodes = 2500
+    eval_rate = 100
     current_q_values = np.array([0,0])
-    eval_env = gym.make("CartPole-v1", render_mode = 'human')
+    eval_env = gym.make("CartPole-v1")
     env = env
     action_space = env.action_space.n
     observation_space = env.observation_space.shape[0]
@@ -276,12 +295,12 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
                 episode_rewards.append(episode_reward)
                 # episode_losses.append(episode_loss)
                 episode_duration_ma.append(timestep)
-                #print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
+                print(f"episode {episode}: reward={episode_reward}, duration={timestep}, exploration rate={strategy.get_exploration_rate(agent.current_step)}")
 
                 #plot(episode_duration_ma, 100, env) # plot the duration by 100 moving average
                 break
             
-        #print(f"episode {episode}: loss={episode_loss}")
+        print(f"episode {episode}: loss={episode_loss}")
 
         #if include_targetnetwork and episode % target_update == 0:
         target_net_state_dict = target_net.state_dict()
@@ -289,10 +308,17 @@ def main(env, include_replaybuffer, include_targetnetwork): #-> add include_repl
         for key in policy_net_state_dict:
             target_net_state_dict[key] = policy_net_state_dict[key]*lr_target + target_net_state_dict[key]*(1-lr_target)
         target_net.load_state_dict(target_net_state_dict)
+        moving_avg = get_moving_average(100, episode_duration_ma)[-1]
+        if moving_avg >= 250:
+            if moving_avg < 400:
+                strategy = exploration(exploration_policy, 0.01, 0.01, eps_decay, temp, current_q_values)
+            else:
+                break
+            # break
 
     env.close()
 
-
+    # make function, plot after each run.
     ## plot 
     plt.figure(figsize=(10, 5))
 
