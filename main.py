@@ -37,8 +37,14 @@ def main():
         include_targetnetwork = False
     else:
         include_targetnetwork = True
+    
+    # gridsearch
+    layer1_values = [32, 64]
+    layer2_values = [32, 64]
+    learning_rates = [0.0001, 0.001]
+    exploration_factors = [0.9, 0.95]
 
-    Q_learning.main(env, include_replaybuffer, include_targetnetwork) 
+    Q_learning.main(env, include_replaybuffer, include_targetnetwork, layer1_values, layer2_values, learning_rates, exploration_factors)
 
 if __name__ == "__main__":
     main()
