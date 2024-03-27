@@ -44,7 +44,7 @@ def main():
     'layer2': [16,32, 64, 128],
     'lr': [0.0001,0.0005, 0.001, 0.005],
     'lr_target': [.2,.1,.05,.01],
-    'exploration_strat': ['egreedy_decay','egreedy','boltzman'],
+    'exploration_strat': ['egreedy_decay','egreedy'],
     'gamma': [0.9,0.99, 0.999],
     'batch_size': [16,32,64,128,256],
     'memory_size': [50,100,200,500]
