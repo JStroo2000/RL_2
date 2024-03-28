@@ -94,9 +94,9 @@ class exploration:
             return self.start
         elif self.policy == 'boltzmann':
             x = self.q_values/self.temp
-            z = x - max(x)
-            softmax = np.exp(z)/sum(np.exp(z))
-            return min(softmax)
+            z = x - np.max(x)
+            softmax = np.exp(z)/np.sum(np.exp(z))
+            return np.min(softmax)
 
 
 class Agent:
