@@ -201,7 +201,7 @@ def main(env, include_replaybuffer, include_targetnetwork,
         temp = 0.1
         if exploration_strat == 'egreedy_decay':
             index = np.random.randint(0,len(exp_dict[exploration_strat]))
-            eps_start,eps_decay,eps_decay = exp_dict[exploration_strat][index]
+            eps_start,eps_decay,eps_end = exp_dict[exploration_strat][index]
             
         elif exploration_strat == 'egreedy':
             eps_start = np.random.choice(exp_dict[exploration_strat])
@@ -211,7 +211,7 @@ def main(env, include_replaybuffer, include_targetnetwork,
                                             'eps_decay':eps_decay,
                                             'eps_end':eps_end,
                                             'temp':temp}
-
+        print(param_dict)
         num_episodes = 5000
         eval_rate = 1000
         current_q_values = np.array([0,0])
